@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#075e54">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<link rel="manifest" href="manifest.json">
+    <title>Miso Reminder</title>
+    <style>
+        /* --- ESTILOS (CSS) --- */
+
+        @media (min-width: 600px) {
+            .phone-container {
+                max-width: 400px; /* Limitamos el ancho */
+                height: 85vh;     /* Limitamos el alto */
+                border-radius: 20px; /* Bordes redondeados */
+                box-shadow: 0 0 50px rgba(0,0,0,0.5); /* Sombra elegante */
+            }
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #333; /* Fondo oscuro para escritorio */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .phone-container {
+            background-color: #fff;
+            width: 100%;
+            height: 100%; /* Ocupa todo el alto por defecto */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Cabecera */
+        .header {
+            background-color: #075e54;
+            color: white;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            flex-grow: 1;
+        }
+
+        /* Área de Chat (Visualización) */
+        .chat-area {
+            flex: 1;
+            background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); /* Fondo sutil */
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message-bubble {
+            background-color: #dcf8c6;
+            padding: 10px 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            align-self: flex-end; /* Mensajes del usuario a la derecha */
+            max-width: 80%;
+            box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+            font-size: 0.95rem;
+        }
+
+        /* Panel de Configuración y Entrada */
+        .input-area {
+            background-color: #f0f0f0;
+            padding: 15px;
+            border-top: 1px solid #ddd;
+        }
+
+        .config-panel {
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            font-size: 0.85rem;
+        }
+
+        .form-row {
+            margin-bottom: 8px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .form-row label {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 3px;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+
+        textarea {
+            width: 100%;
+            height: 60px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            resize: none;
+            font-family: inherit;
+        }
+
+        button {
+            background-color: #128c7e;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 50%;
+            cursor: pointer;
+            margin-left: 10px;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 50px;
+            height: 50px;
+        }
+
+        button:hover {
+            background-color: #075e54;
+        }
+
+        .input-wrapper {
+            display: flex;
+            align-items: center;
+        }
+
+        .hidden {
+            display: none;
+        }
+        
+        #toggleConfig {
+            background: none;
+            border: none;
+            color: #555;
+            font-size: 0.8rem;
+            cursor: pointer;
+            width: auto;
+            height: auto;
+            padding: 0;
+            margin: 0 0 10px 0;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phone-container">
+        <div class="header">
+            <h1>Miso Reminder</h1>
+        </div>
+
+        <div class="chat-area" id="chatContainer">
+            </div>
+
+        <div class="input-area">
+            
+            <button id="toggleConfig">⚙️ Configurar Recordatorio</button>
+
+            <div class="config-panel hidden" id="configPanel">
+                <div class="form-row">
+                    <div style="flex:1">
+                        <label>Fecha y Hora:</label>
+                        <input type="datetime-local" id="reminderDate">
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div style="flex:1">
+                        <label>Periodicidad:</label>
+                        <select id="periodicity">
+                            <option value="once">Una sola vez</option>
+                            <option value="daily">Diario</option>
+                            <option value="weekly">Semanal</option>
+                            <option value="monthly">Mensual</option>
+                        </select>
+                    </div>
+                    <div style="flex:1">
+                        <label>Medio:</label>
+                        <select id="method">
+                            <option value="self">Auto-recordatorio (Notificación)</option>
+                            <option value="whatsapp">WhatsApp Web</option>
+                            <option value="email">Correo Electrónico</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div style="flex:1">
+                        <label>Texto Previo (Intro):</label>
+                        <input type="text" id="prefixText" value="Hola! Te recuerdo que: ">
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-wrapper">
+                <textarea id="messageInput" placeholder="Escribe tu mensaje... Ej: Jessica, mañana es el envío..."></textarea>
+                <button onclick="crearRecordatorio()">➤</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* --- LÓGICA (JavaScript) --- */
+
+        // 1. Alternar visibilidad del panel de configuración
+        const configPanel = document.getElementById('configPanel');
+        const toggleBtn = document.getElementById('toggleConfig');
+        
+        toggleBtn.addEventListener('click', () => {
+            configPanel.classList.toggle('hidden');
+        });
+
+        // 2. Función principal para crear el recordatorio
+        function crearRecordatorio() {
+            // Obtener valores
+            const mensaje = document.getElementById('messageInput').value;
+            const fecha = document.getElementById('reminderDate').value;
+            const periodicidad = document.getElementById('periodicity').value;
+            const medio = document.getElementById('method').value;
+            const prefijo = document.getElementById('prefixText').value;
+
+            // Validar que haya mensaje
+            if (mensaje.trim() === "") {
+                alert("Por favor escribe un mensaje para el recordatorio.");
+                return;
+            }
+
+            // Construir el mensaje completo
+            const mensajeFinal = `${prefijo} "${mensaje}"`;
+            
+            // Visualizar en el chat (simulación)
+            agregarBurbujaChat(mensaje, fecha, periodicidad, medio);
+
+            // Ejecutar acción según el medio (Simulación de la lógica)
+            ejecutarAccion(medio, mensajeFinal);
+
+            // Limpiar campo
+            document.getElementById('messageInput').value = "";
+        }
+
+        // 3. Función para dibujar la burbuja en la pantalla
+        function agregarBurbujaChat(texto, fecha, periodo, medio) {
+            const chatContainer = document.getElementById('chatContainer');
+            const bubble = document.createElement('div');
+            bubble.classList.add('message-bubble');
+            
+            // Formatear texto de la burbuja con detalles técnicos pequeños
+            bubble.innerHTML = `
+                <strong>${texto}</strong><br>
+                <small style="opacity: 0.7; font-size: 0.7rem;">
+                    📅 ${fecha ? fecha.replace('T', ' ') : 'Ahora'} | 🔁 ${periodo} | 📡 ${medio}
+                </small>
+            `;
+            
+            chatContainer.appendChild(bubble);
+            // Hacer scroll hacia abajo
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // 4. Lógica de "Envío" o Guardado
+        function ejecutarAccion(medio, mensajeCompleto) {
+            console.log("Guardando recordatorio en base de datos...", {
+                medio, mensajeCompleto
+            });
+
+            if (medio === 'whatsapp') {
+                // Simula abrir WhatsApp con el texto pre-llenado
+                // Nota: Esto abre whatsapp web con el texto listo para enviar
+                const url = `https://wa.me/?text=${encodeURIComponent(mensajeCompleto)}`;
+                window.open(url, '_blank');
+            } else if (medio === 'email') {
+                // Simula abrir el cliente de correo
+                const url = `mailto:?subject=Recordatorio Miso Reminder&body=${encodeURIComponent(mensajeCompleto)}`;
+                window.open(url, '_blank');
+            } else {
+                // Auto-recordatorio
+                alert(`✅ Recordatorio guardado en Miso Reminder.\n\nTe avisaremos para que envíes: \n${mensajeCompleto}`);
+            }
+        }
+    </script>
+</body>
+</html>
