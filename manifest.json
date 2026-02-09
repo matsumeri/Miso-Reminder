@@ -1,8 +1,8 @@
 {
   "name": "Miso Reminder",
   "short_name": "Miso",
-  "start_url": ".",
-  "scope": ".",
+  "start_url": "/Miso-Reminder/index.html",
+  "scope": "/Miso-Reminder/",
   "display": "standalone",
   "background_color": "#e5ddd5",
   "theme_color": "#075e54",
