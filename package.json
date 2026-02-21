@@ -1,0 +1,13 @@
+{
+  "name": "miso-reminder",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "web-push": "^3.6.7"
+  }
+}
