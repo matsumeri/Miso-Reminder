@@ -164,6 +164,19 @@
             margin: 0 0 10px 0;
             text-decoration: underline;
         }
+
+        #quickTestBtn {
+            background: none;
+            border: none;
+            color: #0b6b5f;
+            font-size: 0.8rem;
+            cursor: pointer;
+            width: auto;
+            height: auto;
+            padding: 0;
+            margin: 0 0 10px 0;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -179,6 +192,7 @@
         <div class="input-area">
             
             <button id="toggleConfig">⚙️ Configurar Recordatorio</button>
+            <button id="quickTestBtn">⏱️ Probar en 15 segundos</button>
 
             <div class="config-panel hidden" id="configPanel">
                 <div class="form-row">
@@ -224,92 +238,528 @@
     </div>
 
     <script>
-        /* --- LÓGICA (JavaScript) --- */
+        const STORAGE_KEY = 'miso-reminders-v2';
+        const DEVICE_KEY = 'miso-device-id';
+        const MAX_TIMEOUT = 2147483647;
+        const timers = new Map();
+        const processingReminderIds = new Set();
+        let backendPublicKey = null;
 
-        // 1. Alternar visibilidad del panel de configuración
         const configPanel = document.getElementById('configPanel');
         const toggleBtn = document.getElementById('toggleConfig');
-        
+        const quickTestBtn = document.getElementById('quickTestBtn');
+
         toggleBtn.addEventListener('click', () => {
             configPanel.classList.toggle('hidden');
         });
 
-        // 2. Función principal para crear el recordatorio
-        function crearRecordatorio() {
-            // Obtener valores
-            const mensaje = document.getElementById('messageInput').value;
+        quickTestBtn.addEventListener('click', crearRecordatorioPrueba);
+
+        initApp();
+
+        async function initApp() {
+            await registrarServiceWorker();
+            await cargarClavePublicaBackend();
+            restaurarYProgramarRecordatorios();
+            iniciarVigilanciaRecordatorios();
+        }
+
+        async function crearRecordatorio() {
+            const mensaje = document.getElementById('messageInput').value.trim();
             const fecha = document.getElementById('reminderDate').value;
             const periodicidad = document.getElementById('periodicity').value;
             const medio = document.getElementById('method').value;
             const prefijo = document.getElementById('prefixText').value;
 
-            // Validar que haya mensaje
-            if (mensaje.trim() === "") {
-                alert("Por favor escribe un mensaje para el recordatorio.");
+            if (!mensaje) {
+                alert('Por favor escribe un mensaje para el recordatorio.');
                 return;
             }
 
-            // Construir el mensaje completo
-            const mensajeFinal = `${prefijo} "${mensaje}"`;
-            
-            // Visualizar en el chat (simulación)
-            agregarBurbujaChat(mensaje, fecha, periodicidad, medio);
+            if (fecha && Number.isNaN(new Date(fecha).getTime())) {
+                alert('La fecha del recordatorio no es válida.');
+                return;
+            }
 
-            // Ejecutar acción según el medio (Simulación de la lógica)
-            ejecutarAccion(medio, mensajeFinal);
+            const ahora = new Date();
+            const fechaBase = fecha ? new Date(fecha) : ahora;
+            const proximaFecha = obtenerProximaFecha(fechaBase, periodicidad, ahora);
+            const mensajeCompleto = `${prefijo} "${mensaje}"`;
 
-            // Limpiar campo
-            document.getElementById('messageInput').value = "";
+            const recordatorio = {
+                id: generarId(),
+                texto: mensaje,
+                mensajeCompleto,
+                periodicidad,
+                medio,
+                baseDateISO: fechaBase.toISOString(),
+                nextTriggerAt: proximaFecha.getTime(),
+                createdAt: Date.now(),
+                deliveryMode: 'local'
+            };
+
+            const permiso = await solicitarPermisoNotificaciones(true);
+            const pushProgramado = await intentarProgramarEnServidor(recordatorio, permiso);
+
+            if (pushProgramado) {
+                recordatorio.deliveryMode = 'server';
+            }
+
+            const recordatorios = obtenerRecordatorios();
+            recordatorios.push(recordatorio);
+            guardarRecordatorios(recordatorios);
+
+            if (recordatorio.deliveryMode === 'local') {
+                programarRecordatorio(recordatorio);
+            }
+
+            agregarBurbujaChat(recordatorio);
+
+            document.getElementById('messageInput').value = '';
+            alert(`✅ Recordatorio guardado para ${formatearFecha(recordatorio.nextTriggerAt)}.`);
         }
 
-        // 3. Función para dibujar la burbuja en la pantalla
-        function agregarBurbujaChat(texto, fecha, periodo, medio) {
+        async function crearRecordatorioPrueba() {
+            const mensajeInput = document.getElementById('messageInput').value.trim();
+            const medio = document.getElementById('method').value;
+            const prefijo = document.getElementById('prefixText').value;
+
+            const mensaje = mensajeInput || 'Prueba rápida de notificación';
+            const ahora = Date.now();
+            const proximaFecha = ahora + 15000;
+            const mensajeCompleto = `${prefijo} "${mensaje}"`;
+
+            const recordatorio = {
+                id: generarId(),
+                texto: `${mensaje} (test 15s)`,
+                mensajeCompleto,
+                periodicidad: 'once',
+                medio,
+                baseDateISO: new Date(proximaFecha).toISOString(),
+                nextTriggerAt: proximaFecha,
+                createdAt: ahora,
+                deliveryMode: 'local'
+            };
+
+            const permiso = await solicitarPermisoNotificaciones(true);
+            const pushProgramado = await intentarProgramarEnServidor(recordatorio, permiso);
+
+            if (pushProgramado) {
+                recordatorio.deliveryMode = 'server';
+            }
+
+            const recordatorios = obtenerRecordatorios();
+            recordatorios.push(recordatorio);
+            guardarRecordatorios(recordatorios);
+
+            if (recordatorio.deliveryMode === 'local') {
+                programarRecordatorio(recordatorio);
+            }
+
+            agregarBurbujaChat(recordatorio);
+
+            alert(`🧪 Prueba programada para ${formatearFecha(recordatorio.nextTriggerAt)}.`);
+        }
+
+        function agregarBurbujaChat(recordatorio) {
             const chatContainer = document.getElementById('chatContainer');
             const bubble = document.createElement('div');
             bubble.classList.add('message-bubble');
-            
-            // Formatear texto de la burbuja con detalles técnicos pequeños
             bubble.innerHTML = `
-                <strong>${texto}</strong><br>
+                <strong>${recordatorio.texto}</strong><br>
                 <small style="opacity: 0.7; font-size: 0.7rem;">
-                    📅 ${fecha ? fecha.replace('T', ' ') : 'Ahora'} | 🔁 ${periodo} | 📡 ${medio}
+                    📅 ${formatearFecha(recordatorio.nextTriggerAt)} | 🔁 ${traducirPeriodicidad(recordatorio.periodicidad)} | 📡 ${traducirMedio(recordatorio.medio)} ${recordatorio.deliveryMode === 'server' ? '| ☁️ Push' : '| 📱 Local'}
                 </small>
             `;
-            
             chatContainer.appendChild(bubble);
-            // Hacer scroll hacia abajo
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
 
-        // 4. Lógica de "Envío" o Guardado
-        function ejecutarAccion(medio, mensajeCompleto) {
-            console.log("Guardando recordatorio en base de datos...", {
-                medio, mensajeCompleto
+        function restaurarYProgramarRecordatorios() {
+            const recordatorios = obtenerRecordatorios();
+
+            recordatorios.forEach(recordatorio => {
+                if (!recordatorio.nextTriggerAt) {
+                    const base = recordatorio.baseDateISO ? new Date(recordatorio.baseDateISO) : new Date();
+                    recordatorio.nextTriggerAt = obtenerProximaFecha(base, recordatorio.periodicidad || 'once', new Date()).getTime();
+                }
+
+                agregarBurbujaChat(recordatorio);
+
+                if ((recordatorio.deliveryMode || 'local') === 'local') {
+                    programarRecordatorio(recordatorio);
+                }
             });
 
-            if (medio === 'whatsapp') {
-                // Simula abrir WhatsApp con el texto pre-llenado
-                // Nota: Esto abre whatsapp web con el texto listo para enviar
-                const url = `https://wa.me/?text=${encodeURIComponent(mensajeCompleto)}`;
-                window.open(url, '_blank');
-            } else if (medio === 'email') {
-                // Simula abrir el cliente de correo
-                const url = `mailto:?subject=Recordatorio Miso Reminder&body=${encodeURIComponent(mensajeCompleto)}`;
-                window.open(url, '_blank');
-            } else {
-                // Auto-recordatorio
-                alert(`✅ Recordatorio guardado en Miso Reminder.\n\nTe avisaremos para que envíes: \n${mensajeCompleto}`);
+            guardarRecordatorios(recordatorios);
+            revisarRecordatoriosVencidos();
+        }
+
+        function iniciarVigilanciaRecordatorios() {
+            setInterval(revisarRecordatoriosVencidos, 30000);
+            window.addEventListener('focus', revisarRecordatoriosVencidos);
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    revisarRecordatoriosVencidos();
+                }
+            });
+        }
+
+        function revisarRecordatoriosVencidos() {
+            const ahora = Date.now();
+            const recordatorios = obtenerRecordatorios();
+
+            recordatorios.forEach(recordatorio => {
+                if ((recordatorio.deliveryMode || 'local') !== 'local') {
+                    return;
+                }
+
+                if (recordatorio.nextTriggerAt <= ahora) {
+                    dispararRecordatorio(recordatorio.id);
+                }
+            });
+        }
+
+        function programarRecordatorio(recordatorio) {
+            limpiarTemporizador(recordatorio.id);
+            const delay = recordatorio.nextTriggerAt - Date.now();
+            programarConDelay(recordatorio.id, delay);
+        }
+
+        function programarConDelay(reminderId, delay) {
+            if (delay <= 0) {
+                dispararRecordatorio(reminderId);
+                return;
+            }
+
+            if (delay > MAX_TIMEOUT) {
+                const timerId = setTimeout(() => {
+                    const recordatorio = obtenerRecordatorios().find(item => item.id === reminderId);
+                    if (!recordatorio) {
+                        return;
+                    }
+                    programarConDelay(reminderId, recordatorio.nextTriggerAt - Date.now());
+                }, MAX_TIMEOUT);
+                timers.set(reminderId, timerId);
+                return;
+            }
+
+            const timerId = setTimeout(() => {
+                dispararRecordatorio(reminderId);
+            }, delay);
+
+            timers.set(reminderId, timerId);
+        }
+
+        async function dispararRecordatorio(reminderId) {
+            if (processingReminderIds.has(reminderId)) {
+                return;
+            }
+
+            processingReminderIds.add(reminderId);
+            limpiarTemporizador(reminderId);
+
+            try {
+                const recordatorios = obtenerRecordatorios();
+                const indice = recordatorios.findIndex(item => item.id === reminderId);
+
+                if (indice === -1) {
+                    return;
+                }
+
+                const recordatorio = recordatorios[indice];
+                await mostrarNotificacion(recordatorio);
+
+                if (recordatorio.periodicidad === 'once') {
+                    recordatorios.splice(indice, 1);
+                } else {
+                    const base = recordatorio.baseDateISO ? new Date(recordatorio.baseDateISO) : new Date();
+                    const proxima = obtenerProximaFecha(base, recordatorio.periodicidad, new Date());
+                    recordatorio.nextTriggerAt = proxima.getTime();
+                    recordatorios[indice] = recordatorio;
+                    programarRecordatorio(recordatorio);
+                }
+
+                guardarRecordatorios(recordatorios);
+            } finally {
+                processingReminderIds.delete(reminderId);
             }
         }
 
-          if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-              navigator.serviceWorker.register('./sw.js')
-                .then(reg => console.log('Miso Service Worker listo', reg))
-                .catch(err => console.log('Error al registrar SW', err));
-            });
-          }
+        async function mostrarNotificacion(recordatorio) {
+            const permiso = await solicitarPermisoNotificaciones(false);
+            const payloadCanal = construirPayloadCanal(recordatorio);
 
+            if (permiso !== 'granted') {
+                alert(`🔔 Recordatorio:\n${recordatorio.mensajeCompleto}`);
+                return;
+            }
+
+            const opciones = {
+                body: recordatorio.mensajeCompleto,
+                icon: 'https://cdn-icons-png.flaticon.com/512/2921/2921222.png',
+                badge: 'https://cdn-icons-png.flaticon.com/512/2921/2921222.png',
+                tag: `miso-reminder-${recordatorio.id}`,
+                renotify: true,
+                data: payloadCanal,
+                actions: construirAccionesNotificacion(recordatorio.medio)
+            };
+
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registro = await navigator.serviceWorker.ready;
+                    await registro.showNotification('Miso Reminder', opciones);
+                    return;
+                } catch {
+                    // continúa al fallback local
+                }
+            }
+
+            const notificacion = new Notification('Miso Reminder', { body: recordatorio.mensajeCompleto });
+            if (payloadCanal.primaryUrl) {
+                notificacion.onclick = () => {
+                    window.open(payloadCanal.primaryUrl, '_blank');
+                    window.focus();
+                    notificacion.close();
+                };
+            }
+        }
+
+        function construirPayloadCanal(recordatorio) {
+            const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(recordatorio.mensajeCompleto)}`;
+            const emailUrl = `mailto:?subject=Recordatorio%20Miso%20Reminder&body=${encodeURIComponent(recordatorio.mensajeCompleto)}`;
+
+            if (recordatorio.medio === 'whatsapp') {
+                return {
+                    mode: 'whatsapp',
+                    primaryUrl: whatsappUrl,
+                    whatsappUrl
+                };
+            }
+
+            if (recordatorio.medio === 'email') {
+                return {
+                    mode: 'email',
+                    primaryUrl: emailUrl,
+                    emailUrl
+                };
+            }
+
+            return { mode: 'self' };
+        }
+
+        function construirAccionesNotificacion(medio) {
+            if (medio === 'whatsapp') {
+                return [{ action: 'open-whatsapp', title: 'Abrir WhatsApp' }];
+            }
+
+            if (medio === 'email') {
+                return [{ action: 'open-email', title: 'Abrir correo' }];
+            }
+
+            return [{ action: 'open-app', title: 'Abrir app' }];
+        }
+
+        function obtenerProximaFecha(fechaBase, periodicidad, ahora) {
+            let proxima = new Date(fechaBase);
+
+            if (Number.isNaN(proxima.getTime())) {
+                proxima = new Date(ahora);
+            }
+
+            if (periodicidad === 'once') {
+                return proxima <= ahora ? new Date(ahora.getTime() + 1000) : proxima;
+            }
+
+            while (proxima <= ahora) {
+                if (periodicidad === 'daily') {
+                    proxima.setDate(proxima.getDate() + 1);
+                } else if (periodicidad === 'weekly') {
+                    proxima.setDate(proxima.getDate() + 7);
+                } else if (periodicidad === 'monthly') {
+                    proxima.setMonth(proxima.getMonth() + 1);
+                } else {
+                    proxima = new Date(ahora.getTime() + 1000);
+                    break;
+                }
+            }
+
+            return proxima;
+        }
+
+        async function solicitarPermisoNotificaciones(interactivo) {
+            if (!('Notification' in window)) {
+                return 'denied';
+            }
+
+            if (Notification.permission === 'granted') {
+                return 'granted';
+            }
+
+            if (Notification.permission === 'denied') {
+                return 'denied';
+            }
+
+            if (!interactivo) {
+                return 'default';
+            }
+
+            return Notification.requestPermission();
+        }
+
+        function obtenerRecordatorios() {
+            try {
+                const data = localStorage.getItem(STORAGE_KEY);
+                return data ? JSON.parse(data) : [];
+            } catch {
+                return [];
+            }
+        }
+
+        function guardarRecordatorios(recordatorios) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(recordatorios));
+        }
+
+        function limpiarTemporizador(reminderId) {
+            const timerId = timers.get(reminderId);
+            if (timerId) {
+                clearTimeout(timerId);
+                timers.delete(reminderId);
+            }
+        }
+
+        function traducirPeriodicidad(valor) {
+            if (valor === 'daily') return 'Diario';
+            if (valor === 'weekly') return 'Semanal';
+            if (valor === 'monthly') return 'Mensual';
+            return 'Una sola vez';
+        }
+
+        function traducirMedio(valor) {
+            if (valor === 'whatsapp') return 'WhatsApp';
+            if (valor === 'email') return 'Correo';
+            return 'Notificación';
+        }
+
+        function formatearFecha(timestamp) {
+            return new Date(timestamp).toLocaleString('es-CO', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function generarId() {
+            if (window.crypto && crypto.randomUUID) {
+                return crypto.randomUUID();
+            }
+
+            return `miso-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        }
+
+        async function registrarServiceWorker() {
+            if (!('serviceWorker' in navigator)) {
+                return;
+            }
+
+            try {
+                await navigator.serviceWorker.register('./sw.js');
+            } catch (error) {
+                console.log('Error al registrar SW', error);
+            }
+        }
+
+        async function cargarClavePublicaBackend() {
+            try {
+                const respuesta = await fetch('./api/public-key');
+                if (!respuesta.ok) {
+                    backendPublicKey = null;
+                    return;
+                }
+
+                const data = await respuesta.json();
+                backendPublicKey = data.publicKey || null;
+            } catch {
+                backendPublicKey = null;
+            }
+        }
+
+        async function intentarProgramarEnServidor(recordatorio, permiso) {
+            if (permiso !== 'granted' || !backendPublicKey || !('serviceWorker' in navigator)) {
+                return false;
+            }
+
+            try {
+                const suscripcion = await obtenerOSuscribirPush();
+                if (!suscripcion) {
+                    return false;
+                }
+
+                const deviceId = obtenerDeviceId();
+
+                const subResp = await fetch('./api/subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId, subscription: suscripcion })
+                });
+
+                if (!subResp.ok) {
+                    return false;
+                }
+
+                const reminderResp = await fetch('./api/reminders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId, reminder: recordatorio })
+                });
+
+                return reminderResp.ok;
+            } catch {
+                return false;
+            }
+        }
+
+        async function obtenerOSuscribirPush() {
+            const registro = await navigator.serviceWorker.ready;
+            let suscripcion = await registro.pushManager.getSubscription();
+
+            if (suscripcion) {
+                return suscripcion;
+            }
+
+            suscripcion = await registro.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: base64UrlToUint8Array(backendPublicKey)
+            });
+
+            return suscripcion;
+        }
+
+        function obtenerDeviceId() {
+            let deviceId = localStorage.getItem(DEVICE_KEY);
+            if (deviceId) {
+                return deviceId;
+            }
+
+            deviceId = generarId();
+            localStorage.setItem(DEVICE_KEY, deviceId);
+            return deviceId;
+        }
+
+        function base64UrlToUint8Array(base64String) {
+            const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+
+            return outputArray;
+        }
     </script>
 </body>
 
