@@ -25,11 +25,21 @@ webpush.setVapidDetails(
   vapidKeys.privateKey
 );
 
+console.log('\n=== VAPID PUBLIC KEY (copia esto a Railway > Variables) ===');
+console.log('VAPID_PUBLIC_KEY=' + vapidKeys.publicKey);
+console.log('VAPID_PRIVATE_KEY=' + vapidKeys.privateKey);
+console.log('=========================================================\n');
+
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(__dirname));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, now: Date.now() });
+  res.json({ ok: true, now: Date.now(), vapidConfigured: !!vapidKeys.publicKey });
+});
+
+app.get('/api/vapid-public-key-hint', (_req, res) => {
+  // Solo muestra la clave pública (no es secreta) para facilitar configuración inicial
+  res.json({ publicKey: vapidKeys.publicKey });
 });
 
 app.get('/api/public-key', (_req, res) => {
@@ -254,10 +264,23 @@ function writeJson(filePath, data) {
 }
 
 function loadOrCreateVapidKeys() {
+  // Prioridad 1: variables de entorno (Railway, Render, etc.)
+  if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+    console.log('Usando claves VAPID desde variables de entorno.');
+    return {
+      publicKey: process.env.VAPID_PUBLIC_KEY,
+      privateKey: process.env.VAPID_PRIVATE_KEY
+    };
+  }
+
+  // Prioridad 2: archivo local (dev / Codespace)
   if (fs.existsSync(VAPID_FILE)) {
+    console.log('Usando claves VAPID desde archivo local.');
     return readJson(VAPID_FILE, null);
   }
 
+  // Prioridad 3: generar nuevas (primer arranque sin config)
+  console.warn('AVISO: Generando nuevas claves VAPID. Configura VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY como variables de entorno para que no cambien en cada redeploy.');
   const keys = webpush.generateVAPIDKeys();
   writeJson(VAPID_FILE, keys);
   return keys;
