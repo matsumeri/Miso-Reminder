@@ -67,14 +67,30 @@ self.addEventListener('push', event => {
   }
 
   const title = payload.title || 'Miso Reminder';
+  const sticky = payload.requireInteraction !== false;
+  const baseData = payload.data || {};
+  const notificationData = {
+    ...baseData,
+    _title: title,
+    _body: payload.body || 'Tienes un recordatorio pendiente',
+    _tag: payload.tag || `miso-reminder-${Date.now()}`,
+    _actions: payload.actions || [{ action: 'open-app', title: 'Abrir app' }],
+    _sticky: sticky,
+    _vibrate: payload.vibrate || [300, 120, 300, 120, 500]
+  };
+
   const options = {
-    body: payload.body || 'Tienes un recordatorio pendiente',
+    body: notificationData._body,
     icon: 'https://cdn-icons-png.flaticon.com/512/2921/2921222.png',
     badge: 'https://cdn-icons-png.flaticon.com/512/2921/2921222.png',
-    tag: payload.tag || `miso-reminder-${Date.now()}`,
+    tag: notificationData._tag,
     renotify: true,
-    data: payload.data || {},
-    actions: payload.actions || [{ action: 'open-app', title: 'Abrir app' }]
+    requireInteraction: sticky,
+    silent: false,
+    vibrate: notificationData._vibrate,
+    data: notificationData,
+    actions: notificationData._actions,
+    timestamp: Date.now()
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -109,4 +125,29 @@ self.addEventListener('notificationclick', event => {
       return undefined;
     })
   );
+});
+
+self.addEventListener('notificationclose', event => {
+  const data = event.notification.data || {};
+
+  if (!data._sticky) {
+    return;
+  }
+
+  const title = data._title || 'Miso Reminder';
+  const options = {
+    body: data._body || 'Tienes un recordatorio pendiente',
+    icon: 'https://cdn-icons-png.flaticon.com/512/2921/2921222.png',
+    badge: 'https://cdn-icons-png.flaticon.com/512/2921/2921222.png',
+    tag: data._tag || `miso-reminder-${Date.now()}`,
+    renotify: true,
+    requireInteraction: true,
+    silent: false,
+    vibrate: data._vibrate || [300, 120, 300, 120, 500],
+    data,
+    actions: data._actions || [{ action: 'open-app', title: 'Abrir app' }],
+    timestamp: Date.now()
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
 });

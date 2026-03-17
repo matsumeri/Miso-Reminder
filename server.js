@@ -132,12 +132,19 @@ async function processDueReminders() {
     const payload = JSON.stringify({
       title: 'Miso Reminder',
       body: reminder.mensajeCompleto,
+        tag: `miso-reminder-${reminder.id}`,
+        requireInteraction: true,
+        vibrate: [300, 120, 300, 120, 500],
       data: buildChannelPayload(reminder),
       actions: buildActions(reminder.medio)
     });
 
     try {
-      await webpush.sendNotification(subEntry.subscription, payload);
+        await webpush.sendNotification(subEntry.subscription, payload, {
+          TTL: 60,
+          urgency: 'high',
+          topic: `miso-${reminder.id}`
+        });
       changed = true;
 
       if (reminder.periodicidad === 'once') {
