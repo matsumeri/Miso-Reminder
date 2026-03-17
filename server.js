@@ -150,6 +150,11 @@ async function processDueReminders() {
   const activeReminders = [];
 
   for (const reminder of reminders) {
+    if (reminder.isActive === false) {
+      activeReminders.push(reminder);
+      continue;
+    }
+
     if (!reminder.nextTriggerAt || reminder.nextTriggerAt > now) {
       activeReminders.push(reminder);
       continue;

@@ -113,21 +113,10 @@
               gap: 8px;
           }
 
-          .reminder-check {
-              margin-right: 6px;
-          }
-
-          .delete-reminder-btn {
-              background: transparent;
-              border: none;
-              color: #9e2a2a;
-              cursor: pointer;
-              width: auto;
-              height: auto;
-              margin: 0;
-              padding: 0;
-              font-size: 0.8rem;
-              text-decoration: underline;
+          .swipe-hint {
+              margin: 0 0 10px 0;
+              font-size: 0.72rem;
+              color: #666;
           }
 
         /* Panel de Configuración y Entrada */
@@ -259,25 +248,6 @@
             text-decoration: underline;
         }
 
-          #selectModeBtn,
-          #deleteSelectedBtn,
-          #deleteAllBtn {
-              background: none;
-              border: none;
-              color: #0b6b5f;
-              font-size: 0.8rem;
-              cursor: pointer;
-              width: auto;
-              height: auto;
-              padding: 0;
-              margin: 0 0 10px 0;
-              text-decoration: underline;
-          }
-
-          #deleteSelectedBtn,
-          #deleteAllBtn {
-              color: #9e2a2a;
-          }
     </style>
 </head>
 <body>
@@ -285,7 +255,7 @@
     <div class="phone-container">
         <div class="header">
             <h1>Miso Reminder</h1>
-              <span id="pushStatus" class="push-status warn">Push: Verificando...</span>
+                            <span id="pushStatus" class="push-status warn">Push: Verificando...</span>
         </div>
 
         <div class="chat-area" id="chatContainer">
@@ -295,9 +265,7 @@
             
             <button id="toggleConfig">⚙️ Configurar Recordatorio</button>
             <button id="quickTestBtn">⏱️ Probar en 15 segundos</button>
-              <button id="selectModeBtn">☑️ Seleccionar recordatorios</button>
-              <button id="deleteSelectedBtn" class="hidden">🗑️ Borrar seleccionados</button>
-              <button id="deleteAllBtn">🧹 Borrar todos</button>
+                            <p class="swipe-hint">Desliza un recordatorio: ⟶ desactivar, ⟵ eliminar</p>
 
             <div class="config-panel hidden" id="configPanel">
                 <div class="form-row">
@@ -352,37 +320,30 @@
     <script>
         const STORAGE_KEY = 'miso-reminders-v2';
         const DEVICE_KEY = 'miso-device-id';
-          const APP_VERSION_FALLBACK = '1.1.0';
+                    const APP_VERSION_FALLBACK = '1.1.0';
         const MAX_TIMEOUT = 2147483647;
+                    const SWIPE_THRESHOLD = 80;
         const timers = new Map();
         const processingReminderIds = new Set();
-          const selectedReminderIds = new Set();
         let backendPublicKey = null;
-          let appVersion = APP_VERSION_FALLBACK;
-          let selectionModeEnabled = false;
+                    let appVersion = APP_VERSION_FALLBACK;
 
         const configPanel = document.getElementById('configPanel');
         const toggleBtn = document.getElementById('toggleConfig');
         const quickTestBtn = document.getElementById('quickTestBtn');
-          const selectModeBtn = document.getElementById('selectModeBtn');
-          const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
-          const deleteAllBtn = document.getElementById('deleteAllBtn');
         const pushStatusEl = document.getElementById('pushStatus');
-          const versionTextEl = document.getElementById('versionText');
+                    const versionTextEl = document.getElementById('versionText');
 
         toggleBtn.addEventListener('click', () => {
             configPanel.classList.toggle('hidden');
         });
 
         quickTestBtn.addEventListener('click', crearRecordatorioPrueba);
-          selectModeBtn.addEventListener('click', toggleModoSeleccion);
-          deleteSelectedBtn.addEventListener('click', borrarSeleccionados);
-          deleteAllBtn.addEventListener('click', borrarTodos);
 
         initApp();
 
         async function initApp() {
-              await cargarVersionApp();
+                            await cargarVersionApp();
                             renderizarVersionApp();
             await actualizarEstadoPushUI();
             await registrarServiceWorker();
@@ -425,7 +386,8 @@
                 baseDateISO: fechaBase.toISOString(),
                 nextTriggerAt: proximaFecha.getTime(),
                 createdAt: Date.now(),
-                deliveryMode: 'local'
+                  deliveryMode: 'local',
+                  isActive: true
             };
 
             const permiso = await solicitarPermisoNotificaciones(true);
@@ -443,7 +405,7 @@
                 programarRecordatorio(recordatorio);
             }
 
-              renderizarListaRecordatorios();
+                            renderizarListaRecordatorios();
 
             document.getElementById('messageInput').value = '';
             alert(`✅ Recordatorio guardado para ${formatearFecha(recordatorio.nextTriggerAt)}.`);
@@ -468,7 +430,8 @@
                 baseDateISO: new Date(proximaFecha).toISOString(),
                 nextTriggerAt: proximaFecha,
                 createdAt: ahora,
-                deliveryMode: 'local'
+                  deliveryMode: 'local',
+                  isActive: true
             };
 
             const permiso = await solicitarPermisoNotificaciones(true);
@@ -486,7 +449,7 @@
                 programarRecordatorio(recordatorio);
             }
 
-              renderizarListaRecordatorios();
+                            renderizarListaRecordatorios();
 
             alert(`🧪 Prueba programada para ${formatearFecha(recordatorio.nextTriggerAt)}.`);
         }
@@ -499,44 +462,20 @@
               const header = document.createElement('div');
               header.className = 'reminder-header';
 
-              const left = document.createElement('div');
-
-              if (selectionModeEnabled) {
-                  const checkbox = document.createElement('input');
-                  checkbox.type = 'checkbox';
-                  checkbox.className = 'reminder-check';
-                  checkbox.checked = selectedReminderIds.has(recordatorio.id);
-                  checkbox.addEventListener('change', event => {
-                      if (event.target.checked) {
-                          selectedReminderIds.add(recordatorio.id);
-                      } else {
-                          selectedReminderIds.delete(recordatorio.id);
-                      }
-                  });
-                  left.appendChild(checkbox);
-              }
-
               const title = document.createElement('strong');
               title.textContent = recordatorio.texto;
-              left.appendChild(title);
-              header.appendChild(left);
-
-              const deleteBtn = document.createElement('button');
-              deleteBtn.type = 'button';
-              deleteBtn.className = 'delete-reminder-btn';
-              deleteBtn.textContent = 'borrar';
-              deleteBtn.addEventListener('click', () => {
-                  borrarPorId(recordatorio.id);
-              });
-              header.appendChild(deleteBtn);
+              header.appendChild(title);
 
               bubble.appendChild(header);
 
+              const estado = recordatorio.isActive === false ? '| ⏸ Desactivado' : '| ✅ Activo';
               const meta = document.createElement('small');
               meta.style.opacity = '0.7';
               meta.style.fontSize = '0.7rem';
-              meta.textContent = `📅 ${formatearFecha(recordatorio.nextTriggerAt)} | 🔁 ${traducirPeriodicidad(recordatorio.periodicidad)} | 📡 ${traducirMedio(recordatorio.medio)} ${recordatorio.deliveryMode === 'server' ? '| ☁️ Push' : '| 📱 Local'}`;
+              meta.textContent = `📅 ${formatearFecha(recordatorio.nextTriggerAt)} | 🔁 ${traducirPeriodicidad(recordatorio.periodicidad)} | 📡 ${traducirMedio(recordatorio.medio)} ${recordatorio.deliveryMode === 'server' ? '| ☁️ Push' : '| 📱 Local'} ${estado}`;
               bubble.appendChild(meta);
+
+              registrarSwipeBurbuja(bubble, recordatorio);
 
             chatContainer.appendChild(bubble);
             chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -548,76 +487,81 @@
 
               const recordatorios = obtenerRecordatorios();
               recordatorios.forEach(agregarBurbujaChat);
-
-              actualizarControlesSeleccion();
-          }
-
-          function actualizarControlesSeleccion() {
-              if (!selectModeBtn || !deleteSelectedBtn) {
-                  return;
-              }
-
-              selectModeBtn.textContent = selectionModeEnabled
-                  ? '✅ Seleccionando (tocar para salir)'
-                  : '☑️ Seleccionar recordatorios';
-
-              if (selectionModeEnabled) {
-                  deleteSelectedBtn.classList.remove('hidden');
-              } else {
-                  deleteSelectedBtn.classList.add('hidden');
-              }
-          }
-
-          function toggleModoSeleccion() {
-              selectionModeEnabled = !selectionModeEnabled;
-              if (!selectionModeEnabled) {
-                  selectedReminderIds.clear();
-              }
-              renderizarListaRecordatorios();
           }
 
           async function borrarPorId(reminderId) {
-              const ok = window.confirm('¿Borrar este recordatorio?');
-              if (!ok) {
-                  return;
-              }
-
               await borrarRecordatorios([reminderId], false);
           }
 
-          async function borrarSeleccionados() {
-              const ids = Array.from(selectedReminderIds);
-              if (!ids.length) {
-                  alert('No hay recordatorios seleccionados.');
+          async function desactivarPorId(reminderId) {
+              const recordatorios = obtenerRecordatorios();
+              const indice = recordatorios.findIndex(item => item.id === reminderId);
+
+              if (indice === -1) {
                   return;
               }
 
-              const ok = window.confirm(`¿Borrar ${ids.length} recordatorio(s) seleccionados?`);
-              if (!ok) {
-                  return;
+              const recordatorio = recordatorios[indice];
+              if (recordatorio.isActive === false) {
+                  recordatorio.isActive = true;
+                  if ((recordatorio.deliveryMode || 'local') === 'local') {
+                      programarRecordatorio(recordatorio);
+                  }
+              } else {
+                  recordatorio.isActive = false;
+                  limpiarTemporizador(recordatorio.id);
               }
 
-              await borrarRecordatorios(ids, false);
-              selectedReminderIds.clear();
+              recordatorios[indice] = recordatorio;
+              guardarRecordatorios(recordatorios);
               renderizarListaRecordatorios();
+              await actualizarRecordatorioEnServidor(recordatorio);
           }
 
-          async function borrarTodos() {
-              const recordatorios = obtenerRecordatorios();
-              if (!recordatorios.length) {
-                  alert('No hay recordatorios para borrar.');
-                  return;
-              }
+          function registrarSwipeBurbuja(bubble, recordatorio) {
+              let startX = 0;
+              let currentX = 0;
+              let dragging = false;
 
-              const ok = window.confirm('¿Borrar TODOS los recordatorios?');
-              if (!ok) {
-                  return;
-              }
+              bubble.addEventListener('touchstart', event => {
+                  if (!event.touches.length) {
+                      return;
+                  }
 
-              const ids = recordatorios.map(item => item.id);
-              await borrarRecordatorios(ids, true);
-              selectedReminderIds.clear();
-              renderizarListaRecordatorios();
+                  startX = event.touches[0].clientX;
+                  currentX = startX;
+                  dragging = true;
+              }, { passive: true });
+
+              bubble.addEventListener('touchmove', event => {
+                  if (!dragging || !event.touches.length) {
+                      return;
+                  }
+
+                  currentX = event.touches[0].clientX;
+                  const deltaX = currentX - startX;
+                  const limited = Math.max(-90, Math.min(90, deltaX));
+                  bubble.style.transform = `translateX(${limited}px)`;
+              }, { passive: true });
+
+              bubble.addEventListener('touchend', async () => {
+                  if (!dragging) {
+                      return;
+                  }
+
+                  dragging = false;
+                  const deltaX = currentX - startX;
+                  bubble.style.transform = '';
+
+                  if (deltaX <= -SWIPE_THRESHOLD) {
+                      await borrarPorId(recordatorio.id);
+                      return;
+                  }
+
+                  if (deltaX >= SWIPE_THRESHOLD) {
+                      await desactivarPorId(recordatorio.id);
+                  }
+              });
           }
 
           async function borrarRecordatorios(ids, all) {
@@ -651,6 +595,19 @@
               }
           }
 
+          async function actualizarRecordatorioEnServidor(recordatorio) {
+              try {
+                  const deviceId = obtenerDeviceId();
+                  await fetch('./api/reminders', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ deviceId, reminder: recordatorio })
+                  });
+              } catch {
+                  // Si falla, el cambio local igual se mantiene.
+              }
+          }
+
         function restaurarYProgramarRecordatorios() {
             const recordatorios = obtenerRecordatorios();
 
@@ -662,7 +619,7 @@
 
                   // El render se hace en bloque al final para evitar duplicados en la vista.
 
-                if ((recordatorio.deliveryMode || 'local') === 'local') {
+                  if (recordatorio.isActive !== false && (recordatorio.deliveryMode || 'local') === 'local') {
                     programarRecordatorio(recordatorio);
                 }
             });
@@ -691,6 +648,10 @@
             const recordatorios = obtenerRecordatorios();
 
             recordatorios.forEach(recordatorio => {
+                  if (recordatorio.isActive === false) {
+                      return;
+                  }
+
                 if ((recordatorio.deliveryMode || 'local') !== 'local') {
                     return;
                 }
