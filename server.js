@@ -148,8 +148,7 @@ async function processDueReminders() {
     try {
         await webpush.sendNotification(subEntry.subscription, payload, {
           TTL: 60,
-          urgency: 'high',
-          topic: `miso-${reminder.id}`
+          urgency: 'high'
         });
       changed = true;
 
@@ -165,6 +164,14 @@ async function processDueReminders() {
       });
     } catch (error) {
       const statusCode = error?.statusCode;
+        const body = error?.body || error?.message || 'sin detalle';
+        console.error('[push] Error enviando notificacion', {
+          reminderId: reminder.id,
+          deviceId: subEntry.deviceId,
+          statusCode,
+          body
+        });
+
       if (statusCode === 404 || statusCode === 410) {
         removeSubscription(subEntry.deviceId, subscriptions);
       }
