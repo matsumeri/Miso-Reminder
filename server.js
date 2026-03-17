@@ -104,6 +104,32 @@ app.post('/api/reminders', (req, res) => {
   res.json({ ok: true });
 });
 
+app.delete('/api/reminders', (req, res) => {
+  const { deviceId, ids, all } = req.body || {};
+
+  if (!deviceId) {
+    res.status(400).json({ ok: false, error: 'deviceId es requerido' });
+    return;
+  }
+
+  const reminders = readJson(REMINDERS_FILE, []);
+  let filtered = reminders;
+
+  if (all === true) {
+    filtered = reminders.filter(item => item.deviceId !== deviceId);
+  } else if (Array.isArray(ids) && ids.length) {
+    const idSet = new Set(ids);
+    filtered = reminders.filter(item => !(item.deviceId === deviceId && idSet.has(item.id)));
+  } else {
+    res.status(400).json({ ok: false, error: 'Debes enviar ids o all=true' });
+    return;
+  }
+
+  const deletedCount = reminders.length - filtered.length;
+  writeJson(REMINDERS_FILE, filtered);
+  res.json({ ok: true, deletedCount });
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`Miso backend escuchando en http://localhost:${PORT} (${HOST}:${PORT})`);
 });

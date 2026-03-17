@@ -106,6 +106,30 @@
             font-size: 0.95rem;
         }
 
+          .reminder-header {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+          }
+
+          .reminder-check {
+              margin-right: 6px;
+          }
+
+          .delete-reminder-btn {
+              background: transparent;
+              border: none;
+              color: #9e2a2a;
+              cursor: pointer;
+              width: auto;
+              height: auto;
+              margin: 0;
+              padding: 0;
+              font-size: 0.8rem;
+              text-decoration: underline;
+          }
+
         /* Panel de Configuración y Entrada */
         .input-area {
             background-color: #f0f0f0;
@@ -234,6 +258,26 @@
             margin: 0 0 10px 0;
             text-decoration: underline;
         }
+
+          #selectModeBtn,
+          #deleteSelectedBtn,
+          #deleteAllBtn {
+              background: none;
+              border: none;
+              color: #0b6b5f;
+              font-size: 0.8rem;
+              cursor: pointer;
+              width: auto;
+              height: auto;
+              padding: 0;
+              margin: 0 0 10px 0;
+              text-decoration: underline;
+          }
+
+          #deleteSelectedBtn,
+          #deleteAllBtn {
+              color: #9e2a2a;
+          }
     </style>
 </head>
 <body>
@@ -251,6 +295,9 @@
             
             <button id="toggleConfig">⚙️ Configurar Recordatorio</button>
             <button id="quickTestBtn">⏱️ Probar en 15 segundos</button>
+              <button id="selectModeBtn">☑️ Seleccionar recordatorios</button>
+              <button id="deleteSelectedBtn" class="hidden">🗑️ Borrar seleccionados</button>
+              <button id="deleteAllBtn">🧹 Borrar todos</button>
 
             <div class="config-panel hidden" id="configPanel">
                 <div class="form-row">
@@ -309,12 +356,17 @@
         const MAX_TIMEOUT = 2147483647;
         const timers = new Map();
         const processingReminderIds = new Set();
+          const selectedReminderIds = new Set();
         let backendPublicKey = null;
           let appVersion = APP_VERSION_FALLBACK;
+          let selectionModeEnabled = false;
 
         const configPanel = document.getElementById('configPanel');
         const toggleBtn = document.getElementById('toggleConfig');
         const quickTestBtn = document.getElementById('quickTestBtn');
+          const selectModeBtn = document.getElementById('selectModeBtn');
+          const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+          const deleteAllBtn = document.getElementById('deleteAllBtn');
         const pushStatusEl = document.getElementById('pushStatus');
           const versionTextEl = document.getElementById('versionText');
 
@@ -323,6 +375,9 @@
         });
 
         quickTestBtn.addEventListener('click', crearRecordatorioPrueba);
+          selectModeBtn.addEventListener('click', toggleModoSeleccion);
+          deleteSelectedBtn.addEventListener('click', borrarSeleccionados);
+          deleteAllBtn.addEventListener('click', borrarTodos);
 
         initApp();
 
@@ -388,7 +443,7 @@
                 programarRecordatorio(recordatorio);
             }
 
-            agregarBurbujaChat(recordatorio);
+              renderizarListaRecordatorios();
 
             document.getElementById('messageInput').value = '';
             alert(`✅ Recordatorio guardado para ${formatearFecha(recordatorio.nextTriggerAt)}.`);
@@ -431,7 +486,7 @@
                 programarRecordatorio(recordatorio);
             }
 
-            agregarBurbujaChat(recordatorio);
+              renderizarListaRecordatorios();
 
             alert(`🧪 Prueba programada para ${formatearFecha(recordatorio.nextTriggerAt)}.`);
         }
@@ -440,15 +495,161 @@
             const chatContainer = document.getElementById('chatContainer');
             const bubble = document.createElement('div');
             bubble.classList.add('message-bubble');
-            bubble.innerHTML = `
-                <strong>${recordatorio.texto}</strong><br>
-                <small style="opacity: 0.7; font-size: 0.7rem;">
-                    📅 ${formatearFecha(recordatorio.nextTriggerAt)} | 🔁 ${traducirPeriodicidad(recordatorio.periodicidad)} | 📡 ${traducirMedio(recordatorio.medio)} ${recordatorio.deliveryMode === 'server' ? '| ☁️ Push' : '| 📱 Local'}
-                </small>
-            `;
+
+              const header = document.createElement('div');
+              header.className = 'reminder-header';
+
+              const left = document.createElement('div');
+
+              if (selectionModeEnabled) {
+                  const checkbox = document.createElement('input');
+                  checkbox.type = 'checkbox';
+                  checkbox.className = 'reminder-check';
+                  checkbox.checked = selectedReminderIds.has(recordatorio.id);
+                  checkbox.addEventListener('change', event => {
+                      if (event.target.checked) {
+                          selectedReminderIds.add(recordatorio.id);
+                      } else {
+                          selectedReminderIds.delete(recordatorio.id);
+                      }
+                  });
+                  left.appendChild(checkbox);
+              }
+
+              const title = document.createElement('strong');
+              title.textContent = recordatorio.texto;
+              left.appendChild(title);
+              header.appendChild(left);
+
+              const deleteBtn = document.createElement('button');
+              deleteBtn.type = 'button';
+              deleteBtn.className = 'delete-reminder-btn';
+              deleteBtn.textContent = 'borrar';
+              deleteBtn.addEventListener('click', () => {
+                  borrarPorId(recordatorio.id);
+              });
+              header.appendChild(deleteBtn);
+
+              bubble.appendChild(header);
+
+              const meta = document.createElement('small');
+              meta.style.opacity = '0.7';
+              meta.style.fontSize = '0.7rem';
+              meta.textContent = `📅 ${formatearFecha(recordatorio.nextTriggerAt)} | 🔁 ${traducirPeriodicidad(recordatorio.periodicidad)} | 📡 ${traducirMedio(recordatorio.medio)} ${recordatorio.deliveryMode === 'server' ? '| ☁️ Push' : '| 📱 Local'}`;
+              bubble.appendChild(meta);
+
             chatContainer.appendChild(bubble);
             chatContainer.scrollTop = chatContainer.scrollHeight;
         }
+
+          function renderizarListaRecordatorios() {
+              const chatContainer = document.getElementById('chatContainer');
+              chatContainer.innerHTML = '';
+
+              const recordatorios = obtenerRecordatorios();
+              recordatorios.forEach(agregarBurbujaChat);
+
+              actualizarControlesSeleccion();
+          }
+
+          function actualizarControlesSeleccion() {
+              if (!selectModeBtn || !deleteSelectedBtn) {
+                  return;
+              }
+
+              selectModeBtn.textContent = selectionModeEnabled
+                  ? '✅ Seleccionando (tocar para salir)'
+                  : '☑️ Seleccionar recordatorios';
+
+              if (selectionModeEnabled) {
+                  deleteSelectedBtn.classList.remove('hidden');
+              } else {
+                  deleteSelectedBtn.classList.add('hidden');
+              }
+          }
+
+          function toggleModoSeleccion() {
+              selectionModeEnabled = !selectionModeEnabled;
+              if (!selectionModeEnabled) {
+                  selectedReminderIds.clear();
+              }
+              renderizarListaRecordatorios();
+          }
+
+          async function borrarPorId(reminderId) {
+              const ok = window.confirm('¿Borrar este recordatorio?');
+              if (!ok) {
+                  return;
+              }
+
+              await borrarRecordatorios([reminderId], false);
+          }
+
+          async function borrarSeleccionados() {
+              const ids = Array.from(selectedReminderIds);
+              if (!ids.length) {
+                  alert('No hay recordatorios seleccionados.');
+                  return;
+              }
+
+              const ok = window.confirm(`¿Borrar ${ids.length} recordatorio(s) seleccionados?`);
+              if (!ok) {
+                  return;
+              }
+
+              await borrarRecordatorios(ids, false);
+              selectedReminderIds.clear();
+              renderizarListaRecordatorios();
+          }
+
+          async function borrarTodos() {
+              const recordatorios = obtenerRecordatorios();
+              if (!recordatorios.length) {
+                  alert('No hay recordatorios para borrar.');
+                  return;
+              }
+
+              const ok = window.confirm('¿Borrar TODOS los recordatorios?');
+              if (!ok) {
+                  return;
+              }
+
+              const ids = recordatorios.map(item => item.id);
+              await borrarRecordatorios(ids, true);
+              selectedReminderIds.clear();
+              renderizarListaRecordatorios();
+          }
+
+          async function borrarRecordatorios(ids, all) {
+              const recordatorios = obtenerRecordatorios();
+              const idSet = new Set(ids);
+
+              const restantes = all
+                  ? []
+                  : recordatorios.filter(item => !idSet.has(item.id));
+
+              recordatorios
+                  .filter(item => all || idSet.has(item.id))
+                  .forEach(item => limpiarTemporizador(item.id));
+
+              guardarRecordatorios(restantes);
+              renderizarListaRecordatorios();
+
+              await borrarRecordatoriosEnServidor(ids, all);
+          }
+
+          async function borrarRecordatoriosEnServidor(ids, all) {
+              try {
+                  const deviceId = obtenerDeviceId();
+                  await fetch('./api/reminders', {
+                      method: 'DELETE',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ deviceId, ids, all })
+                  });
+              } catch {
+                  // Si falla, al menos quedan borrados localmente.
+              }
+          }
 
         function restaurarYProgramarRecordatorios() {
             const recordatorios = obtenerRecordatorios();
@@ -459,7 +660,7 @@
                     recordatorio.nextTriggerAt = obtenerProximaFecha(base, recordatorio.periodicidad || 'once', new Date()).getTime();
                 }
 
-                agregarBurbujaChat(recordatorio);
+                  // El render se hace en bloque al final para evitar duplicados en la vista.
 
                 if ((recordatorio.deliveryMode || 'local') === 'local') {
                     programarRecordatorio(recordatorio);
@@ -467,6 +668,7 @@
             });
 
             guardarRecordatorios(recordatorios);
+              renderizarListaRecordatorios();
             revisarRecordatoriosVencidos();
         }
 
@@ -560,6 +762,7 @@
                 }
 
                 guardarRecordatorios(recordatorios);
+                  renderizarListaRecordatorios();
             } finally {
                 processingReminderIds.delete(reminderId);
             }
