@@ -291,6 +291,7 @@
             await actualizarEstadoPushUI();
             await registrarServiceWorker();
             await cargarClavePublicaBackend();
+            await asegurarSuscripcionPush();
             await sincronizarRecordatoriosConServidor();
             await actualizarEstadoPushUI();
             restaurarYProgramarRecordatorios();
@@ -765,6 +766,36 @@
                 }
             } catch {
                 setPushStatus('Push: Error de estado', 'off');
+            }
+        }
+
+        async function asegurarSuscripcionPush() {
+            if (!backendPublicKey || !('serviceWorker' in navigator)) {
+                return false;
+            }
+
+            if (Notification.permission !== 'granted') {
+                return false;
+            }
+
+            try {
+                const suscripcion = await obtenerOSuscribirPush();
+                if (!suscripcion) {
+                    return false;
+                }
+
+                const deviceId = obtenerDeviceId();
+                const subResp = await fetch('./api/subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId, subscription: suscripcion })
+                });
+
+                await actualizarEstadoPushUI();
+                return subResp.ok;
+            } catch {
+                await actualizarEstadoPushUI();
+                return false;
             }
         }
 
