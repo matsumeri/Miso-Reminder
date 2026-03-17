@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = path.join(__dirname, 'data');
 const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'subscriptions.json');
 const REMINDERS_FILE = path.join(DATA_DIR, 'reminders.json');
@@ -87,8 +88,8 @@ app.post('/api/reminders', (req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
-  console.log(`Miso backend escuchando en http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Miso backend escuchando en http://localhost:${PORT} (${HOST}:${PORT})`);
 });
 
 setInterval(processDueReminders, 10000);

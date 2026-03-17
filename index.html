@@ -57,10 +57,38 @@
             flex-grow: 1;
         }
 
+        .push-status {
+            font-size: 0.72rem;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.35);
+            background: rgba(255,255,255,0.15);
+            white-space: nowrap;
+        }
+
+        .push-status.ok {
+            background: rgba(37, 211, 102, 0.25);
+            border-color: rgba(37, 211, 102, 0.7);
+        }
+
+        .push-status.warn {
+            background: rgba(255, 193, 7, 0.22);
+            border-color: rgba(255, 193, 7, 0.75);
+        }
+
+        .push-status.off {
+            background: rgba(244, 67, 54, 0.22);
+            border-color: rgba(244, 67, 54, 0.75);
+        }
+
         /* Área de Chat (Visualización) */
         .chat-area {
             flex: 1;
-            background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); /* Fondo sutil */
+            background-color: #efeae2;
+            background-image:
+                radial-gradient(circle at 1px 1px, rgba(7, 94, 84, 0.06) 1px, transparent 0),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.1));
+            background-size: 14px 14px, 100% 100%;
             padding: 20px;
             overflow-y: auto;
             display: flex;
@@ -184,6 +212,7 @@
     <div class="phone-container">
         <div class="header">
             <h1>Miso Reminder</h1>
+                            <span id="pushStatus" class="push-status warn">Push: Verificando...</span>
         </div>
 
         <div class="chat-area" id="chatContainer">
@@ -248,6 +277,7 @@
         const configPanel = document.getElementById('configPanel');
         const toggleBtn = document.getElementById('toggleConfig');
         const quickTestBtn = document.getElementById('quickTestBtn');
+        const pushStatusEl = document.getElementById('pushStatus');
 
         toggleBtn.addEventListener('click', () => {
             configPanel.classList.toggle('hidden');
@@ -258,8 +288,11 @@
         initApp();
 
         async function initApp() {
+            await actualizarEstadoPushUI();
             await registrarServiceWorker();
             await cargarClavePublicaBackend();
+            await sincronizarRecordatoriosConServidor();
+            await actualizarEstadoPushUI();
             restaurarYProgramarRecordatorios();
             iniciarVigilanciaRecordatorios();
         }
@@ -397,10 +430,14 @@
 
         function iniciarVigilanciaRecordatorios() {
             setInterval(revisarRecordatoriosVencidos, 30000);
-            window.addEventListener('focus', revisarRecordatoriosVencidos);
+            window.addEventListener('focus', () => {
+                revisarRecordatoriosVencidos();
+                actualizarEstadoPushUI();
+            });
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) {
                     revisarRecordatoriosVencidos();
+                    actualizarEstadoPushUI();
                 }
             });
         }
@@ -686,8 +723,114 @@
             }
         }
 
+        function setPushStatus(texto, tipo) {
+            if (!pushStatusEl) {
+                return;
+            }
+
+            pushStatusEl.textContent = texto;
+            pushStatusEl.classList.remove('ok', 'warn', 'off');
+            pushStatusEl.classList.add(tipo);
+        }
+
+        async function actualizarEstadoPushUI() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                setPushStatus('Push: No compatible', 'off');
+                return;
+            }
+
+            if (Notification.permission === 'denied') {
+                setPushStatus('Push: Bloqueado', 'off');
+                return;
+            }
+
+            if (Notification.permission !== 'granted') {
+                setPushStatus('Push: Permiso pendiente', 'warn');
+                return;
+            }
+
+            if (!backendPublicKey) {
+                setPushStatus('Push: Sin backend', 'warn');
+                return;
+            }
+
+            try {
+                const registro = await navigator.serviceWorker.ready;
+                const suscripcion = await registro.pushManager.getSubscription();
+
+                if (suscripcion) {
+                    setPushStatus('Push: Activo', 'ok');
+                } else {
+                    setPushStatus('Push: Sin suscripcion', 'warn');
+                }
+            } catch {
+                setPushStatus('Push: Error de estado', 'off');
+            }
+        }
+
+        async function sincronizarRecordatoriosConServidor() {
+            if (!backendPublicKey || !('serviceWorker' in navigator)) {
+                return;
+            }
+
+            const permiso = await solicitarPermisoNotificaciones(false);
+            if (permiso !== 'granted') {
+                return;
+            }
+
+            const recordatorios = obtenerRecordatorios();
+            const pendientesLocales = recordatorios.filter(item => (item.deliveryMode || 'local') === 'local');
+
+            if (!pendientesLocales.length) {
+                return;
+            }
+
+            try {
+                const suscripcion = await obtenerOSuscribirPush();
+                if (!suscripcion) {
+                    return;
+                }
+
+                const deviceId = obtenerDeviceId();
+                const subResp = await fetch('./api/subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId, subscription: suscripcion })
+                });
+
+                if (!subResp.ok) {
+                    return;
+                }
+
+                let huboCambios = false;
+
+                for (const recordatorio of pendientesLocales) {
+                    const reminderResp = await fetch('./api/reminders', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ deviceId, reminder: recordatorio })
+                    });
+
+                    if (reminderResp.ok) {
+                        recordatorio.deliveryMode = 'server';
+                        limpiarTemporizador(recordatorio.id);
+                        huboCambios = true;
+                    }
+                }
+
+                if (huboCambios) {
+                    guardarRecordatorios(recordatorios);
+                }
+            } catch {
+                // Si falla la sincronización, los recordatorios siguen en modo local.
+            }
+
+            await actualizarEstadoPushUI();
+        }
+
         async function intentarProgramarEnServidor(recordatorio, permiso) {
             if (permiso !== 'granted' || !backendPublicKey || !('serviceWorker' in navigator)) {
+                await actualizarEstadoPushUI();
                 return false;
             }
 
@@ -715,8 +858,10 @@
                     body: JSON.stringify({ deviceId, reminder: recordatorio })
                 });
 
+                await actualizarEstadoPushUI();
                 return reminderResp.ok;
             } catch {
+                await actualizarEstadoPushUI();
                 return false;
             }
         }
