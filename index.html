@@ -305,17 +305,18 @@
     <script>
         const STORAGE_KEY = 'miso-reminders-v2';
         const DEVICE_KEY = 'miso-device-id';
-                    const APP_VERSION = '1.1.0';
+          const APP_VERSION_FALLBACK = '1.1.0';
         const MAX_TIMEOUT = 2147483647;
         const timers = new Map();
         const processingReminderIds = new Set();
         let backendPublicKey = null;
+          let appVersion = APP_VERSION_FALLBACK;
 
         const configPanel = document.getElementById('configPanel');
         const toggleBtn = document.getElementById('toggleConfig');
         const quickTestBtn = document.getElementById('quickTestBtn');
         const pushStatusEl = document.getElementById('pushStatus');
-                    const versionTextEl = document.getElementById('versionText');
+          const versionTextEl = document.getElementById('versionText');
 
         toggleBtn.addEventListener('click', () => {
             configPanel.classList.toggle('hidden');
@@ -326,6 +327,7 @@
         initApp();
 
         async function initApp() {
+              await cargarVersionApp();
                             renderizarVersionApp();
             await actualizarEstadoPushUI();
             await registrarServiceWorker();
@@ -697,12 +699,28 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify(recordatorios));
         }
 
+          async function cargarVersionApp() {
+              try {
+                  const respuesta = await fetch('./api/app-version');
+                  if (!respuesta.ok) {
+                      return;
+                  }
+
+                  const data = await respuesta.json();
+                  if (data?.version) {
+                      appVersion = String(data.version);
+                  }
+              } catch {
+                  // mantiene fallback local
+              }
+          }
+
           function renderizarVersionApp() {
               if (!versionTextEl) {
                   return;
               }
 
-              versionTextEl.textContent = `v${APP_VERSION}`;
+              versionTextEl.textContent = `v${appVersion}`;
           }
 
         function limpiarTemporizador(reminderId) {

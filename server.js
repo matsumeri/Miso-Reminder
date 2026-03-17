@@ -10,10 +10,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
+const PACKAGE_FILE = path.join(__dirname, 'package.json');
 const DATA_DIR = path.join(__dirname, 'data');
 const SUBSCRIPTIONS_FILE = path.join(DATA_DIR, 'subscriptions.json');
 const REMINDERS_FILE = path.join(DATA_DIR, 'reminders.json');
 const VAPID_FILE = path.join(DATA_DIR, 'vapid-keys.json');
+const APP_VERSION = readJson(PACKAGE_FILE, { version: '0.0.0' })?.version || '0.0.0';
 
 ensureFile(SUBSCRIPTIONS_FILE, []);
 ensureFile(REMINDERS_FILE, []);
@@ -35,6 +37,10 @@ app.use(express.static(__dirname));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, now: Date.now(), vapidConfigured: !!vapidKeys.publicKey });
+});
+
+app.get('/api/app-version', (_req, res) => {
+  res.json({ version: APP_VERSION });
 });
 
 app.get('/api/vapid-public-key-hint', (_req, res) => {
