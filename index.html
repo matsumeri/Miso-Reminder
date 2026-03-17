@@ -177,59 +177,31 @@
         }
 
           .version-footer {
-              margin-top: 12px;
-              padding-top: 10px;
+              margin-top: 8px;
+              padding-top: 6px;
               border-top: 1px dashed #cfcfcf;
           }
 
-          .version-row {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              gap: 8px;
-              margin-bottom: 8px;
+          .version-accordion {
+              font-size: 0.68rem;
+              color: #5a5a5a;
           }
 
-          .version-title {
-              margin: 0;
-              font-size: 0.82rem;
-              color: #4f4f4f;
-          }
-
-          .text-action {
-              background: none;
-              border: none;
-              color: #0b6b5f;
-              font-size: 0.8rem;
+          .version-accordion summary {
               cursor: pointer;
-              width: auto;
-              height: auto;
-              padding: 0;
-              margin: 0;
-              text-decoration: underline;
+              user-select: none;
+              list-style: none;
+              font-size: 0.68rem;
+              color: #4a4a4a;
           }
 
-          .version-list {
-              max-height: 110px;
-              overflow-y: auto;
-              display: grid;
-              gap: 6px;
+          .version-accordion summary::-webkit-details-marker {
+              display: none;
           }
 
-          .version-item {
-              background: #fff;
-              border: 1px solid #e2e2e2;
-              border-radius: 8px;
-              padding: 6px 8px;
-              font-size: 0.75rem;
-              color: #333;
-          }
-
-          .version-meta {
-              display: flex;
-              justify-content: space-between;
-              gap: 8px;
-              margin-bottom: 2px;
+          .version-content {
+              margin-top: 4px;
+              font-size: 0.65rem;
               color: #666;
           }
 
@@ -269,7 +241,7 @@
     <div class="phone-container">
         <div class="header">
             <h1>Miso Reminder</h1>
-                            <span id="pushStatus" class="push-status warn">Push: Verificando...</span>
+              <span id="pushStatus" class="push-status warn">Push: Verificando...</span>
         </div>
 
         <div class="chat-area" id="chatContainer">
@@ -322,11 +294,10 @@
             </div>
 
               <div class="version-footer">
-                  <div class="version-row">
-                      <p class="version-title">Versiones (SemVer)</p>
-                      <button id="newVersionBtn" class="text-action">+ Nueva versión</button>
-                  </div>
-                  <div id="versionList" class="version-list"></div>
+                  <details class="version-accordion">
+                      <summary>Version</summary>
+                      <div class="version-content" id="versionText"></div>
+                  </details>
               </div>
         </div>
     </div>
@@ -334,9 +305,7 @@
     <script>
         const STORAGE_KEY = 'miso-reminders-v2';
         const DEVICE_KEY = 'miso-device-id';
-          const VERSION_STORAGE_KEY = 'miso-version-history-v1';
-          const APP_BASE_VERSION = '1.0.0';
-          const MAX_VERSION_ITEMS = 20;
+                    const APP_VERSION = '1.1.0';
         const MAX_TIMEOUT = 2147483647;
         const timers = new Map();
         const processingReminderIds = new Set();
@@ -346,20 +315,18 @@
         const toggleBtn = document.getElementById('toggleConfig');
         const quickTestBtn = document.getElementById('quickTestBtn');
         const pushStatusEl = document.getElementById('pushStatus');
-          const newVersionBtn = document.getElementById('newVersionBtn');
-          const versionListEl = document.getElementById('versionList');
+                    const versionTextEl = document.getElementById('versionText');
 
         toggleBtn.addEventListener('click', () => {
             configPanel.classList.toggle('hidden');
         });
 
         quickTestBtn.addEventListener('click', crearRecordatorioPrueba);
-          newVersionBtn.addEventListener('click', crearNuevaVersion);
 
         initApp();
 
         async function initApp() {
-              inicializarVersiones();
+                            renderizarVersionApp();
             await actualizarEstadoPushUI();
             await registrarServiceWorker();
             await cargarClavePublicaBackend();
@@ -730,95 +697,12 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify(recordatorios));
         }
 
-          function inicializarVersiones() {
-              let versiones = obtenerVersiones();
-
-              if (!versiones.length) {
-                  versiones = [{
-                      version: APP_BASE_VERSION,
-                      note: 'Versión base',
-                      createdAt: Date.now()
-                  }];
-                  guardarVersiones(versiones);
-              }
-
-              renderizarVersiones(versiones);
-          }
-
-          function crearNuevaVersion() {
-              const versiones = obtenerVersiones();
-              const actual = versiones[0]?.version || APP_BASE_VERSION;
-              const siguiente = incrementarPatchSemver(actual);
-              const notaUsuario = window.prompt('Nota de versión (opcional):', 'Ajustes menores');
-
-              if (notaUsuario === null) {
+          function renderizarVersionApp() {
+              if (!versionTextEl) {
                   return;
               }
 
-              const nueva = {
-                  version: siguiente,
-                  note: notaUsuario.trim() || 'Sin detalle',
-                  createdAt: Date.now()
-              };
-
-              const actualizadas = [nueva, ...versiones].slice(0, MAX_VERSION_ITEMS);
-              guardarVersiones(actualizadas);
-              renderizarVersiones(actualizadas);
-          }
-
-          function incrementarPatchSemver(version) {
-              const parts = (version || '').split('.').map(item => Number(item));
-
-              if (parts.length !== 3 || parts.some(Number.isNaN)) {
-                  return APP_BASE_VERSION;
-              }
-
-              const [major, minor, patch] = parts;
-              return `${major}.${minor}.${patch + 1}`;
-          }
-
-          function obtenerVersiones() {
-              try {
-                  const data = localStorage.getItem(VERSION_STORAGE_KEY);
-                  return data ? JSON.parse(data) : [];
-              } catch {
-                  return [];
-              }
-          }
-
-          function guardarVersiones(versiones) {
-              localStorage.setItem(VERSION_STORAGE_KEY, JSON.stringify(versiones));
-          }
-
-          function renderizarVersiones(versiones) {
-              if (!versionListEl) {
-                  return;
-              }
-
-              versionListEl.innerHTML = '';
-
-              versiones.forEach(item => {
-                  const div = document.createElement('div');
-                  div.className = 'version-item';
-
-                  const meta = document.createElement('div');
-                  meta.className = 'version-meta';
-
-                  const versionText = document.createElement('strong');
-                  versionText.textContent = `v${item.version}`;
-
-                  const fecha = document.createElement('span');
-                  fecha.textContent = formatearFecha(item.createdAt);
-
-                  const nota = document.createElement('div');
-                  nota.textContent = item.note;
-
-                  meta.appendChild(versionText);
-                  meta.appendChild(fecha);
-                  div.appendChild(meta);
-                  div.appendChild(nota);
-                  versionListEl.appendChild(div);
-              });
+              versionTextEl.textContent = `v${APP_VERSION}`;
           }
 
         function limpiarTemporizador(reminderId) {
