@@ -247,26 +247,28 @@
             background: none;
             border: none;
             color: #555;
-            font-size: 0.8rem;
+            font-size: 2rem;
+            line-height: 1;
             cursor: pointer;
             width: auto;
             height: auto;
             padding: 0;
-            margin: 0 0 10px 0;
-            text-decoration: underline;
+            margin: 0 12px 10px 0;
+            text-decoration: none;
         }
 
         #quickTestBtn {
             background: none;
             border: none;
             color: #0b6b5f;
-            font-size: 0.8rem;
+            font-size: 2rem;
+            line-height: 1;
             cursor: pointer;
             width: auto;
             height: auto;
             padding: 0;
             margin: 0 0 10px 0;
-            text-decoration: underline;
+            text-decoration: none;
         }
 
     </style>
@@ -284,8 +286,8 @@
 
         <div class="input-area">
             
-            <button id="toggleConfig">⚙️ Configurar Recordatorio</button>
-            <button id="quickTestBtn">⏱️ Probar en 15 segundos</button>
+            <button id="toggleConfig" aria-label="Configurar recordatorio" title="Configurar recordatorio">⚙️</button>
+            <button id="quickTestBtn" aria-label="Probar en 15 segundos" title="Probar en 15 segundos">⏱️</button>
                             <p class="swipe-hint">Desliza un recordatorio: ⟶ desactivar, ⟵ eliminar</p>
 
             <div class="config-panel hidden" id="configPanel">
